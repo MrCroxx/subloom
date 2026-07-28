@@ -1,52 +1,60 @@
 # Subloom
 
-Subloom 是一个面向电影文件的命令行工具：优先复用已有时间轴，通过 OpenAI
-翻译为简体中文字幕；只有完全找不到字幕时，才在用户确认后执行语音转写。
+Subloom is a command-line tool that creates Simplified Chinese subtitles for movies. It
+reuses an existing timeline whenever possible, translates the subtitle text with OpenAI,
+and falls back to speech-to-text only after explicit user confirmation.
 
-## 处理策略
+## Source selection
 
-工具严格按以下顺序选择来源：
+Subloom selects a subtitle source in the following order:
 
-1. 探测 MKV 等容器里的文本字幕流（SRT、ASS、SSA、WebVTT、mov_text）。如果已经有
-   中文字幕，直接规范化为 UTF-8 SRT；否则结合电影标题、年份及相邻台词翻译。
-2. 没有可用内嵌字幕时，通过 OpenSubtitles 先按 movie hash 搜索，再按标题和年份
-   回退搜索。hash 命中通常对应同一发行版本；标题回退命中会提示人工检查同步。
-3. 完全没有字幕时显示成本与隐私提示。确认后，FFmpeg 将音轨切成小块，OpenAI
-   Whisper 返回带 segment 时间戳的原语言文本，再走同一翻译流程。
+1. It inspects MKV and other media containers for text subtitle streams, including SRT,
+   ASS, SSA, WebVTT, and `mov_text`. An existing Chinese stream is normalized directly to
+   UTF-8 SRT. Other languages are translated using the movie title, release year, and
+   adjacent dialogue as context.
+2. If no usable embedded subtitle exists, it searches OpenSubtitles by movie hash first,
+   then falls back to a title-and-year query. A movie-hash match will usually correspond to
+   the same release. A title-only match produces a warning so synchronization can be checked
+   manually.
+3. If no subtitle can be found, Subloom displays a cost and privacy warning. After the user
+   confirms, FFmpeg splits the audio track into small chunks, OpenAI Whisper transcribes the
+   original dialogue with segment timestamps, and the result enters the same translation
+   pipeline.
 
-翻译模型只接收字幕编号和文本，不接收也不生成时间戳。本地代码校验每批返回的字幕
-编号集合，并把译文写回原 cue，因此翻译过程不会漂移或重排时间轴。
+The translation model receives cue IDs and text, but never timestamps. Local code validates
+the returned cue ID set and writes each translation back to its original cue, preventing the
+translation stage from shifting, merging, or reordering the timeline.
 
-## 依赖
+## Requirements
 
-- Python 3.12+
-- FFmpeg 和 FFprobe
-- OpenAI API Key
-- OpenSubtitles API Key（搜索在线字幕时需要）
-- OpenSubtitles 用户名和密码（可选，用于认证下载额度）
+- Python 3.12 or later
+- FFmpeg and FFprobe
+- An OpenAI API key
+- An OpenSubtitles API key when online subtitle search is enabled
+- Optional OpenSubtitles credentials for authenticated download quotas
 
-## 安装
+## Installation
 
-推荐使用 `uv`：
+Using `uv` is recommended:
 
 ```bash
 uv sync --extra dev
 cp .env.example .env
 ```
 
-编辑 `.env`，至少填写 `OPENAI_API_KEY`。需要搜索在线字幕时，还要填写
-`OPENSUBTITLES_API_KEY`。API Key 只从环境变量或本地 `.env` 读取，`.env` 已被 Git
-忽略。
+Set `OPENAI_API_KEY` in `.env`. To search for online subtitles, also set
+`OPENSUBTITLES_API_KEY`. API credentials are read only from environment variables or the
+local `.env` file, which is excluded from Git.
 
-## 使用
+## Usage
 
-处理单个电影：
+Process a movie:
 
 ```bash
 uv run subloom "/movies/The.Matrix.1999.mkv"
 ```
 
-指定元数据、源语言和输出文件：
+Override the metadata, source language, and output path:
 
 ```bash
 uv run subloom movie.mkv \
@@ -56,19 +64,21 @@ uv run subloom movie.mkv \
   --output movie.zh-CN.srt
 ```
 
-没有字幕时，默认会询问是否转写。自动化环境可显式授权：
+When no subtitle can be found, Subloom asks before starting speech-to-text. Non-interactive
+workflows can grant approval explicitly:
 
 ```bash
 uv run subloom movie.mkv --transcribe
 ```
 
-选择特定内嵌字幕流（使用 FFprobe 展示的全局 stream index）：
+Select a specific embedded subtitle stream using its global FFprobe stream index:
 
 ```bash
 uv run subloom movie.mkv --embedded-stream 4
 ```
 
-默认翻译模型为 `gpt-5.6-luna`，语音模型为 `whisper-1`。可以通过 `.env` 调整：
+The default translation model is `gpt-5.6-luna`, and the default transcription model is
+`whisper-1`. Both can be changed in `.env`:
 
 ```dotenv
 OPENAI_TRANSLATION_MODEL=gpt-5.6-luna
@@ -76,23 +86,28 @@ OPENAI_TRANSCRIPTION_MODEL=whisper-1
 OPENSUBTITLES_LANGUAGES=en,ja,ko
 ```
 
-## 验证
+## Verification
 
 ```bash
+uv run ruff format --check .
 uv run ruff check .
 uv run mypy src
 uv run pytest --cov=subloom
 ```
 
-## 已知边界
+## Known limitations
 
-- PGS、VobSub 等图形字幕不会做 OCR；遇到它们会继续搜索 OpenSubtitles。
-- OpenSubtitles 的标题回退结果可能来自不同剪辑版本，因此工具会输出同步警告。首版不做
-  基于音频指纹的自动拉伸或偏移修正。
-- 语音转写会把压缩后的单声道音频块上传到 OpenAI，并产生额外费用；不会静默启用。
-- 输出为外挂 UTF-8 SRT，不会修改原视频文件，也不会自动封装回 MKV。
+- Image-based subtitle formats such as PGS and VobSub are not processed with OCR. Subloom
+  continues to OpenSubtitles when it encounters only image-based streams.
+- An OpenSubtitles title match may belong to a different cut or release. Subloom reports a
+  synchronization warning but does not yet perform audio-fingerprint-based offset or timing
+  correction.
+- Speech-to-text uploads compressed mono audio chunks to OpenAI and incurs additional API
+  cost. It is never enabled silently.
+- Output is an external UTF-8 SRT file. Subloom does not modify the source video or remux the
+  generated subtitle into an MKV container.
 
-## 架构
+## Architecture
 
 ```text
 CLI
