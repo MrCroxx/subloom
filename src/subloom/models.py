@@ -2,12 +2,6 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-CHINESE_LANGUAGE_CODES = frozenset({"zh", "zho", "chi", "zh-cn", "zh-hans", "cmn"})
-
-
-def is_chinese_language(language: str | None) -> bool:
-    return language is not None and language.casefold() in CHINESE_LANGUAGE_CODES
-
 
 @dataclass(frozen=True, slots=True)
 class SubtitleCue:
@@ -68,7 +62,7 @@ class SubtitleSource(StrEnum):
     EMBEDDED = "embedded"
     OPENSUBTITLES = "opensubtitles"
     TRANSCRIPTION = "transcription"
-    EXISTING_CHINESE = "existing_chinese"
+    EXISTING_TARGET = "existing_target"
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,5 +70,6 @@ class ProcessResult:
     output_path: Path
     source: SubtitleSource
     source_language: str | None
+    target_language: str
     cue_count: int
     warning: str | None = None

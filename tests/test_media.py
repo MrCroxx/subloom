@@ -11,7 +11,7 @@ def test_infer_title_and_year_removes_release_metadata() -> None:
     assert year == 1999
 
 
-def test_select_subtitle_prefers_existing_chinese() -> None:
+def test_select_subtitle_prefers_the_target_language() -> None:
     media = MediaInfo(
         path=Path("movie.mkv"),
         title="Movie",
@@ -19,11 +19,15 @@ def test_select_subtitle_prefers_existing_chinese() -> None:
         duration_ms=1_000,
         subtitle_streams=(
             SubtitleStream(index=2, codec="subrip", language="en", is_default=True),
-            SubtitleStream(index=3, codec="ass", language="zho"),
+            SubtitleStream(index=3, codec="ass", language="fra"),
         ),
     )
 
-    selected = MediaTool().select_subtitle_stream(media, preferred_language="en")
+    selected = MediaTool().select_subtitle_stream(
+        media,
+        target_language="fr",
+        preferred_language="en",
+    )
 
     assert selected is not None
     assert selected.index == 3
@@ -38,4 +42,4 @@ def test_select_subtitle_ignores_image_based_streams() -> None:
         subtitle_streams=(SubtitleStream(index=2, codec="hdmv_pgs_subtitle", language="en"),),
     )
 
-    assert MediaTool().select_subtitle_stream(media) is None
+    assert MediaTool().select_subtitle_stream(media, target_language="fr") is None

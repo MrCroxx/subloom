@@ -10,13 +10,13 @@ from subloom.errors import (
     SubtitleNotFoundError,
     UserCancelledError,
 )
+from subloom.languages import TargetLanguage, languages_match
 from subloom.media import MediaTool
 from subloom.models import (
     MediaInfo,
     ProcessResult,
     SubtitleDocument,
     SubtitleSource,
-    is_chinese_language,
 )
 from subloom.openai_service import OpenAIService
 from subloom.opensubtitles import OpenSubtitlesClient
@@ -37,6 +37,7 @@ class SubtitlePipeline:
         video_path: Path,
         output_path: Path,
         *,
+        target_language: TargetLanguage,
         title: str | None = None,
         year: int | None = None,
         source_language: str | None = None,
@@ -55,6 +56,7 @@ class SubtitlePipeline:
             work_dir = Path(temporary)
             stream = self.media_tool.select_subtitle_stream(
                 media,
+                target_language=target_language.tag,
                 preferred_language=source_language,
                 stream_index=embedded_stream_index,
             )
@@ -71,12 +73,17 @@ class SubtitlePipeline:
                 source_path = work_dir / "embedded.srt"
                 self.media_tool.extract_subtitle(media.path, stream, source_path)
                 document = read_srt(source_path, language=stream.language)
-                if is_chinese_language(stream.language):
-                    write_srt(output_path, document)
+                if languages_match(stream.language, target_language.tag):
+                    target_document = SubtitleDocument(
+                        cues=document.cues,
+                        language=target_language.tag,
+                    )
+                    write_srt(output_path, target_document)
                     return ProcessResult(
                         output_path=output_path,
-                        source=SubtitleSource.EXISTING_CHINESE,
+                        source=SubtitleSource.EXISTING_TARGET,
                         source_language=stream.language,
+                        target_language=target_language.tag,
                         cue_count=len(document.cues),
                     )
                 return self._translate_and_write(
@@ -85,23 +92,46 @@ class SubtitlePipeline:
                     output_path,
                     SubtitleSource.EMBEDDED,
                     source_language or stream.language,
+                    target_language,
                 )
 
             if search_opensubtitles and self.settings.opensubtitles_api_key is not None:
-                online_document, language, hash_match = self._from_opensubtitles(media, work_dir)
+                online_document, language, hash_match = self._from_opensubtitles(
+                    media,
+                    work_dir,
+                    target_language,
+                )
                 if online_document is not None:
-                    result = self._translate_and_write(
-                        online_document,
-                        media,
-                        output_path,
-                        SubtitleSource.OPENSUBTITLES,
-                        source_language or language,
-                    )
+                    if languages_match(language, target_language.tag):
+                        write_srt(
+                            output_path,
+                            SubtitleDocument(
+                                cues=online_document.cues,
+                                language=target_language.tag,
+                            ),
+                        )
+                        result = ProcessResult(
+                            output_path=output_path,
+                            source=SubtitleSource.OPENSUBTITLES,
+                            source_language=language,
+                            target_language=target_language.tag,
+                            cue_count=len(online_document.cues),
+                        )
+                    else:
+                        result = self._translate_and_write(
+                            online_document,
+                            media,
+                            output_path,
+                            SubtitleSource.OPENSUBTITLES,
+                            source_language or language,
+                            target_language,
+                        )
                     if not hash_match:
                         return ProcessResult(
                             output_path=result.output_path,
                             source=result.source,
                             source_language=result.source_language,
+                            target_language=result.target_language,
                             cue_count=result.cue_count,
                             warning=(
                                 "OpenSubtitles matched by title rather than movie hash; "
@@ -131,6 +161,7 @@ class SubtitlePipeline:
                 output_path,
                 SubtitleSource.TRANSCRIPTION,
                 source_language or document.language,
+                target_language,
                 service=service,
             )
 
@@ -138,6 +169,7 @@ class SubtitlePipeline:
         self,
         media: MediaInfo,
         work_dir: Path,
+        target_language: TargetLanguage,
     ) -> tuple[SubtitleDocument | None, str | None, bool]:
         self.progress("Searching OpenSubtitles")
         password = (
@@ -151,7 +183,17 @@ class SubtitlePipeline:
                 username=self.settings.opensubtitles_username,
                 password=password,
             ) as client:
-                candidates = client.search(media, self.settings.subtitle_languages)
+                search_languages = list(
+                    dict.fromkeys([target_language.base_code, *self.settings.subtitle_languages])
+                )
+                candidates = client.search(media, search_languages)
+                candidates.sort(
+                    key=lambda candidate: languages_match(
+                        candidate.language,
+                        target_language.tag,
+                    ),
+                    reverse=True,
+                )
                 for candidate in candidates[:3]:
                     self.progress(
                         f"Trying OpenSubtitles file {candidate.file_name} ({candidate.language})"
@@ -182,19 +224,22 @@ class SubtitlePipeline:
         output_path: Path,
         source: SubtitleSource,
         source_language: str | None,
+        target_language: TargetLanguage,
         service: OpenAIService | None = None,
     ) -> ProcessResult:
-        self.progress(f"Translating {len(document.cues)} cues into Simplified Chinese")
+        self.progress(f"Translating {len(document.cues)} cues into {target_language.display_name}")
         translated = (service or self._openai_service()).translate(
             document,
             media,
             source_language=source_language,
+            target_language=target_language,
         )
         write_srt(output_path, translated)
         return ProcessResult(
             output_path=output_path,
             source=source,
             source_language=source_language,
+            target_language=target_language.tag,
             cue_count=len(translated.cues),
         )
 

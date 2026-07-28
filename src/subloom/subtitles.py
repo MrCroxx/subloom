@@ -87,7 +87,11 @@ def write_srt(path: Path, document: SubtitleDocument) -> None:
     path.write_text(render_srt(document), encoding="utf-8", newline="\n")
 
 
-def replace_texts(document: SubtitleDocument, texts: Iterable[str]) -> SubtitleDocument:
+def replace_texts(
+    document: SubtitleDocument,
+    texts: Iterable[str],
+    target_language: str,
+) -> SubtitleDocument:
     translated = list(texts)
     if len(translated) != len(document.cues):
         raise ValueError("translated cue count does not match source cue count")
@@ -101,4 +105,4 @@ def replace_texts(document: SubtitleDocument, texts: Iterable[str]) -> SubtitleD
         )
         for cue, text in zip(document.cues, translated, strict=True)
     )
-    return SubtitleDocument(cues=cues, language="zh-CN")
+    return SubtitleDocument(cues=cues, language=target_language)

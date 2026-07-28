@@ -3,6 +3,7 @@ from pathlib import Path
 from pytest import MonkeyPatch
 
 from subloom.config import Settings
+from subloom.languages import TargetLanguage
 from subloom.models import (
     MediaInfo,
     SubtitleCue,
@@ -41,8 +42,10 @@ class FakeOpenAIService:
         document: SubtitleDocument,
         _: MediaInfo,
         source_language: str | None,
+        target_language: TargetLanguage,
     ) -> SubtitleDocument:
         assert source_language == "en"
+        assert target_language.tag == "fr"
         cue = document.cues[0]
         return SubtitleDocument(
             cues=(
@@ -53,7 +56,7 @@ class FakeOpenAIService:
                     text="Translated line",
                 ),
             ),
-            language="zh-CN",
+            language=target_language.tag,
         )
 
 
@@ -63,7 +66,7 @@ def test_pipeline_uses_embedded_text_subtitle_and_preserves_timing(
 ) -> None:
     video = tmp_path / "movie.mkv"
     video.touch()
-    output = tmp_path / "movie.zh-CN.srt"
+    output = tmp_path / "movie.fr.srt"
     stream = SubtitleStream(index=2, codec="subrip", language="en")
     media = MediaInfo(
         path=video,
@@ -76,10 +79,44 @@ def test_pipeline_uses_embedded_text_subtitle_and_preserves_timing(
     pipeline.media_tool = FakeMediaTool(media, stream)  # type: ignore[assignment]
     monkeypatch.setattr(pipeline, "_openai_service", lambda: FakeOpenAIService())
 
-    result = pipeline.process(video, output, confirm_transcription=lambda: False)
+    result = pipeline.process(
+        video,
+        output,
+        target_language=TargetLanguage.parse("French"),
+        confirm_transcription=lambda: False,
+    )
 
     rendered = parse_srt(output.read_text(encoding="utf-8"))
     assert result.source is SubtitleSource.EMBEDDED
+    assert result.target_language == "fr"
     assert rendered.cues[0].text == "Translated line"
     assert rendered.cues[0].start_ms == 1_000
     assert rendered.cues[0].end_ms == 2_000
+
+
+def test_pipeline_reuses_an_embedded_target_language_subtitle(tmp_path: Path) -> None:
+    video = tmp_path / "movie.mkv"
+    video.touch()
+    output = tmp_path / "movie.fr.srt"
+    stream = SubtitleStream(index=2, codec="subrip", language="fra")
+    media = MediaInfo(
+        path=video,
+        title="Movie",
+        year=2020,
+        duration_ms=10_000,
+        subtitle_streams=(stream,),
+    )
+    pipeline = SubtitlePipeline(Settings())
+    pipeline.media_tool = FakeMediaTool(media, stream)  # type: ignore[assignment]
+
+    result = pipeline.process(
+        video,
+        output,
+        target_language=TargetLanguage.parse("fr"),
+        confirm_transcription=lambda: False,
+    )
+
+    assert result.source is SubtitleSource.EXISTING_TARGET
+    assert result.source_language == "fra"
+    assert result.target_language == "fr"
+    assert parse_srt(output.read_text(encoding="utf-8")).cues[0].text == "Hello"

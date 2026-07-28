@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     openai_api_key: SecretStr | None = None
     openai_translation_model: str = "gpt-5.6-luna"
     openai_transcription_model: str = "whisper-1"
+    target_language: str = "zh-CN"
 
     opensubtitles_api_key: SecretStr | None = None
     opensubtitles_username: str | None = None

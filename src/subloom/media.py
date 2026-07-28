@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from subloom.errors import ExternalToolError
-from subloom.models import MediaInfo, SubtitleStream, is_chinese_language
+from subloom.languages import languages_match
+from subloom.models import MediaInfo, SubtitleStream
 
 TEXT_SUBTITLE_CODECS = frozenset({"ass", "mov_text", "ssa", "subrip", "text", "ttml", "webvtt"})
 YEAR_RE = re.compile(r"(?<!\d)((?:19|20)\d{2})(?!\d)")
@@ -88,6 +89,7 @@ class MediaTool:
     def select_subtitle_stream(
         self,
         media: MediaInfo,
+        target_language: str,
         preferred_language: str | None = None,
         stream_index: int | None = None,
     ) -> SubtitleStream | None:
@@ -100,11 +102,10 @@ class MediaTool:
         def rank(stream: SubtitleStream) -> tuple[int, int, int, int]:
             language_match = int(
                 preferred_language is not None
-                and stream.language is not None
-                and stream.language.casefold() == preferred_language.casefold()
+                and languages_match(stream.language, preferred_language)
             )
             return (
-                int(is_chinese_language(stream.language)),
+                int(languages_match(stream.language, target_language)),
                 language_match,
                 int(stream.is_default),
                 -stream.index,
