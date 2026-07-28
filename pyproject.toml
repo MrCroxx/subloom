@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "subloom"
 version = "0.1.0"
-description = "Create context-aware Simplified Chinese subtitles for movies"
+description = "Create context-aware translated subtitles for movies"
 readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
@@ -13,6 +13,7 @@ authors = [{ name = "MrCroxx" }]
 dependencies = [
     "charset-normalizer>=3.4,<4",
     "httpx>=0.28,<1",
+    "langcodes[data]>=3.5,<4",
     "openai>=2.15,<3",
     "pydantic>=2.11,<3",
     "pydantic-settings>=2.10,<3",

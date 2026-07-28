@@ -5,11 +5,12 @@ import typer
 
 from subloom.config import Settings
 from subloom.errors import SubloomError, UserCancelledError
+from subloom.languages import TargetLanguage
 from subloom.pipeline import SubtitlePipeline
 
 app = typer.Typer(
     name="subloom",
-    help="Create context-aware Simplified Chinese subtitles for a movie.",
+    help="Create context-aware translated subtitles for a movie.",
     no_args_is_help=True,
 )
 
@@ -36,6 +37,14 @@ def process_video(
         str | None,
         typer.Option("--source-language", "-l", help="Source language code, e.g. en or ja."),
     ] = None,
+    target_language: Annotated[
+        str | None,
+        typer.Option(
+            "--target-language",
+            "-t",
+            help="Target BCP 47 tag or English language name, e.g. fr or Japanese.",
+        ),
+    ] = None,
     embedded_stream: Annotated[
         int | None,
         typer.Option("--embedded-stream", min=0, help="Exact FFmpeg subtitle stream index."),
@@ -52,8 +61,13 @@ def process_video(
         ),
     ] = False,
 ) -> None:
-    output_path = output or video.with_name(f"{video.stem}.zh-CN.srt")
     settings = Settings.from_project_env()
+    try:
+        target = TargetLanguage.parse(target_language or settings.target_language)
+    except ValueError as error:
+        raise typer.BadParameter(str(error), param_hint="--target-language") from error
+
+    output_path = output or video.with_name(f"{video.stem}.{target.tag}.srt")
     pipeline = SubtitlePipeline(settings, progress=lambda message: typer.echo(f"• {message}"))
 
     def confirm_transcription() -> bool:
@@ -70,6 +84,7 @@ def process_video(
         result = pipeline.process(
             video.resolve(),
             output_path.resolve(),
+            target_language=target,
             title=title,
             year=year,
             source_language=source_language,
@@ -86,7 +101,8 @@ def process_video(
 
     typer.secho(f"Created {result.output_path}", fg=typer.colors.GREEN)
     typer.echo(
-        f"Source: {result.source.value}; language: {result.source_language or 'unknown'}; "
+        f"Source: {result.source.value}; source language: "
+        f"{result.source_language or 'unknown'}; target language: {result.target_language}; "
         f"cues: {result.cue_count}"
     )
     if result.warning:

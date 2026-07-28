@@ -31,9 +31,9 @@ def test_replace_texts_changes_only_text_and_language() -> None:
         language="en",
     )
 
-    translated = replace_texts(source, ["Translated line"])
+    translated = replace_texts(source, ["Translated line"], target_language="fr")
 
-    assert translated.language == "zh-CN"
+    assert translated.language == "fr"
     assert translated.cues[0].text == "Translated line"
     assert translated.cues[0].start_ms == 100
     assert translated.cues[0].end_ms == 900
@@ -43,4 +43,4 @@ def test_replace_texts_rejects_a_different_cue_count() -> None:
     source = SubtitleDocument(cues=(SubtitleCue(index=1, start_ms=100, end_ms=900, text="Hello"),))
 
     with pytest.raises(ValueError, match="cue count"):
-        replace_texts(source, [])
+        replace_texts(source, [], target_language="fr")

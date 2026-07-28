@@ -5,6 +5,7 @@ from openai import OpenAI, OpenAIError
 from pydantic import BaseModel, Field
 
 from subloom.errors import TranslationError
+from subloom.languages import TargetLanguage
 from subloom.media import MediaTool
 from subloom.models import MediaInfo, SubtitleCue, SubtitleDocument
 from subloom.subtitles import replace_texts
@@ -37,6 +38,7 @@ class OpenAIService:
         document: SubtitleDocument,
         media: MediaInfo,
         source_language: str | None,
+        target_language: TargetLanguage,
     ) -> SubtitleDocument:
         translated_by_id: dict[int, str] = {}
         cues = document.cues
@@ -54,6 +56,7 @@ class OpenAIService:
                             "content": self._translation_instructions(
                                 media=media,
                                 source_language=source_language,
+                                target_language=target_language,
                             ),
                         },
                         {
@@ -84,7 +87,11 @@ class OpenAIService:
                 )
             translated_by_id.update({cue.cue_id: cue.text for cue in parsed.cues})
 
-        return replace_texts(document, (translated_by_id[cue.index] for cue in cues))
+        return replace_texts(
+            document,
+            (translated_by_id[cue.index] for cue in cues),
+            target_language=target_language.tag,
+        )
 
     def transcribe(
         self,
@@ -167,18 +174,24 @@ class OpenAIService:
         return [{"cue_id": cue.index, "text": cue.text} for cue in cues]
 
     @staticmethod
-    def _translation_instructions(media: MediaInfo, source_language: str | None) -> str:
+    def _translation_instructions(
+        media: MediaInfo,
+        source_language: str | None,
+        target_language: TargetLanguage,
+    ) -> str:
         year = str(media.year) if media.year is not None else "unknown"
         language = source_language or "auto-detected"
         return f"""You are a professional film subtitle translator and editor.
-Translate only cues_to_translate into natural Simplified Chinese.
+Translate only cues_to_translate into natural {target_language.display_name}.
 Movie title: {media.title}
 Release year: {year}
 Source language: {language}
+Target language: {target_language.display_name} ({target_language.tag})
 
 Use film context, characterization, genre conventions, and adjacent cues to resolve ambiguity.
 Keep dialogue concise enough to read on screen. Preserve meaningful line breaks, speaker markers,
-italics tags, and sound-description brackets. Do not translate names mechanically when an
-established Chinese rendering is known. Return every cue exactly once with the original cue_id.
-Never merge, split, reorder, omit, or invent cues. Context cues are reference only and must not be
-returned."""
+italics tags, and sound-description brackets. Use established target-language renderings for
+names and culturally specific terms when they exist. Return every cue exactly once with the
+original cue_id.
+Never merge, split, reorder, omit, or invent cues. Context cues are reference only and must not
+be returned."""

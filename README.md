@@ -1,17 +1,18 @@
 # Subloom
 
-Subloom is a command-line tool that creates Simplified Chinese subtitles for movies. It
-reuses an existing timeline whenever possible, translates the subtitle text with OpenAI,
-and falls back to speech-to-text only after explicit user confirmation.
+Subloom is a command-line tool that creates translated subtitles for movies in a requested
+target language. It reuses an existing timeline whenever possible, translates the subtitle
+text with OpenAI, and falls back to speech-to-text only after explicit user confirmation.
+The default target remains Simplified Chinese (`zh-CN`).
 
 ## Source selection
 
 Subloom selects a subtitle source in the following order:
 
 1. It inspects MKV and other media containers for text subtitle streams, including SRT,
-   ASS, SSA, WebVTT, and `mov_text`. An existing Chinese stream is normalized directly to
-   UTF-8 SRT. Other languages are translated using the movie title, release year, and
-   adjacent dialogue as context.
+   ASS, SSA, WebVTT, and `mov_text`. An existing target-language stream is normalized
+   directly to UTF-8 SRT. Other languages are translated using the movie title, release
+   year, and adjacent dialogue as context.
 2. If no usable embedded subtitle exists, it searches OpenSubtitles by movie hash first,
    then falls back to a title-and-year query. A movie-hash match will usually correspond to
    the same release. A title-only match produces a warning so synchronization can be checked
@@ -54,14 +55,24 @@ Process a movie:
 uv run subloom "/movies/The.Matrix.1999.mkv"
 ```
 
-Override the metadata, source language, and output path:
+Translate into French while overriding the metadata and source language:
 
 ```bash
 uv run subloom movie.mkv \
   --title "The Matrix" \
   --year 1999 \
   --source-language en \
-  --output movie.zh-CN.srt
+  --target-language fr
+```
+
+`--target-language` accepts BCP 47 tags and English language names. For example, `ja`,
+`pt-BR`, `Japanese`, and `Brazilian Portuguese` are valid. The normalized language tag is
+used in the default output filename, such as `movie.fr.srt` or `movie.pt-BR.srt`.
+
+Set a persistent default target in `.env`:
+
+```dotenv
+TARGET_LANGUAGE=fr
 ```
 
 When no subtitle can be found, Subloom asks before starting speech-to-text. Non-interactive
